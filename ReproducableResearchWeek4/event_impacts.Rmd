@@ -1,0 +1,137 @@
+---
+title: "Severe Weather Affects on Health and Economics in the US"
+author: "Taylor Wilcox"
+date: "February 10, 2016"
+output: html_document
+---
+
+#Synopsis
+This publication uses data from the U.S. National Oceanic and Atmospheric Administrations (NOAA) database. This database tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage.
+
+This analysis extracts the relevant columns from the database and uses the data to determine which type of event has the most negative effect on human health and economics.
+
+#Data Processing
+
+Load libraries we will need and get the data:
+```{r}
+library(ggplot2)
+
+fileName <- "repdata-data-StoremData.csv.bz2"
+if(!file.exists(fileName)) {
+  download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2",
+                destfile = fileName,
+                method="curl")
+}
+
+data <- read.csv(fileName, sep=",", header=TRUE)
+```
+
+Let's see a summary of the data:
+```{r}
+summary(data)
+```
+
+Get a subset of the important parts of the data that are needed.
+```{r}
+relevantColumns <- c("EVTYPE", "FATALITIES", "INJURIES", "PROPDMG", "PROPDMGEXP", "CROPDMG", "CROPDMGEXP")
+data <- data[,relevantColumns]
+```
+
+The units need to be converted.
+From National Weather Service Instruction 10-1605 August, 2007, Storm Data Event Table Section 2.7 we learn how the units are structured:
+```{r}
+# H is hundreds
+hundreds <- 1e2
+# K is thousands
+thousands <- 1e3
+# M is millions
+millions <- 1e6
+# B is billions
+billions <- 1e9
+```
+
+Convert the units for property values:
+```{r}
+data$TOTALPROPDMG = 0
+
+data[data$PROPDMGEXP == "H",]$TOTALPROPDMG = data[data$PROPDMGEXP == "H",]$PROPDMG * hundreds
+data[data$PROPDMGEXP == "K",]$TOTALPROPDMG = data[data$PROPDMGEXP == "K",]$PROPDMG * thousands
+data[data$PROPDMGEXP == "M",]$TOTALPROPDMG = data[data$PROPDMGEXP == "M",]$PROPDMG * millions
+data[data$PROPDMGEXP == "B",]$TOTALPROPDMG = data[data$PROPDMGEXP == "B",]$PROPDMG * billions
+```
+
+Convert the units for crop values:
+```{r}
+data$TOTALCROPDMG = 0
+
+data[data$CROPDMGEXP == "H",]$TOTALCROPDMG = data[data$CROPDMGEXP == "H",]$CROPDMG * hundreds
+data[data$CROPDMGEXP == "K",]$TOTALCROPDMG = data[data$CROPDMGEXP == "K",]$CROPDMG * thousands
+data[data$CROPDMGEXP == "M",]$TOTALCROPDMG = data[data$CROPDMGEXP == "M",]$CROPDMG * millions
+data[data$CROPDMGEXP == "B",]$TOTALCROPDMG = data[data$CROPDMGEXP == "B",]$CROPDMG * billions
+```
+
+Get the injuries data:
+```{r}
+injuries <- aggregate(INJURIES ~ EVTYPE, data = data, sum)
+injuries <- injuries[order(-injuries$INJURIES),][1:3,]
+```
+
+Get the fatalities data:
+```{r}
+fatalities <- aggregate(FATALITIES ~ EVTYPE, data = data, sum)
+fatalities <- fatalities[order(-fatalities$FATALITIES),][1:3,]
+```
+
+Get the damage from property and crop:
+```{r}
+economicDamage <- aggregate((TOTALPROPDMG + TOTALCROPDMG) / billions ~ EVTYPE,
+                         data = data,
+                         sum)
+```
+
+The column name is difficult to work with. Let's rename it:
+```{r}
+names(economicDamage)
+names(economicDamage) = c("EVTYPE", "TOTALDMG")
+names(economicDamage)
+```
+
+Get the top 3 types that cause economic damage:
+```{r}
+economicDamage <- economicDamage[order(-economicDamage$TOTALDMG),][1:3,]
+```
+
+#Results
+
+###Across the United States, which types of events (as indicated in the 𝙴𝚅𝚃𝚈𝙿𝙴 variable) are most harmful with respect to population health?
+
+```{r}
+ggplot(injuries, aes(x = EVTYPE, y = INJURIES)) +
+  ggtitle("Number of Injuries") +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle=90, hjust = 1)) +
+  xlab("Event Type") +
+  ylab("Injuries")
+
+ggplot(fatalities, aes(x = EVTYPE, y = FATALITIES)) + 
+  ggtitle("Number of Fatalities") +
+  geom_bar(stat = "identity") + 
+  theme(axis.text.x = element_text(angle=90, hjust = 1)) +
+  xlab("Event Type") +
+  ylab("Fatalities")
+```
+
+*The result is that Tornadoes are the most harmful event with respect to population health.*
+
+###Across the United States, which types of events have the greatest economic consequences?
+
+```{r}
+ggplot(economicDamage, aes(x=EVTYPE, y=TOTALDMG)) +
+  ggtitle("Damage Cost") +
+  geom_bar(stat="identity") +
+  theme(axis.text.x=element_text(angle=90, hjust=1)) +
+  xlab("Event Type") +
+  ylab("Damages in billions of dollars")
+```
+
+*The result is that the Flood event type has the greatest economic consequences*
